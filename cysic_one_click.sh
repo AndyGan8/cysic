@@ -46,7 +46,8 @@ view_logs() {
     LOG_DIR=~/cysic-verifier/
     if [ -d "$LOG_DIR" ]; then
         echo "正在检查 ~/cysic-verifier/ 目录中的日志文件..."
-        LOG_FILES=$(find "$LOG_DIR" -type f -name "*.log" 2>/dev/null)
+        # 递归查找 .log、.txt 文件或以 log 开头的文件
+        LOG_FILES=$(find "$LOG_DIR" -type f \( -name "*.log" -o -name "*.txt" -o -name "log*" \) 2>/dev/null)
         if [ -n "$LOG_FILES" ]; then
             echo "找到以下日志文件："
             echo "$LOG_FILES"
@@ -59,7 +60,9 @@ view_logs() {
                 echo "未选择有效的日志文件或文件不存在。"
             fi
         else
-            echo "未在 ~/cysic-verifier/ 目录中找到日志文件。"
+            echo "未在 ~/cysic-verifier/ 目录及其子目录中找到日志文件。"
+            echo "正在列出 ~/cysic-verifier/ 目录中的所有文件以供调试："
+            ls -R "$LOG_DIR"
         fi
     else
         echo "错误：未找到 ~/cysic-verifier/ 目录。请确保已完成节点安装。"
