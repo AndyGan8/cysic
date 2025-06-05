@@ -30,55 +30,66 @@ install_and_run_node() {
     echo "等待安装完成，启动验证程序..."
     sleep 10  # 等待安装完成，时间可根据需要调整
     cd ~/cysic-verifier/ || { echo "错误：无法切换到~/cysic-verifier/目录"; return 1; }
-    bash start.sh &
+    
+    # 在新的 screen 会话中启动验证程序
+    screen -dmS cysic_verifier bash start.sh
     if [ $? -ne 0 ]; then
         echo "错误：启动验证程序失败。请检查start.sh脚本或等待几分钟后重试。"
         echo "如果看到'err: rpc error'，请等待几分钟，验证程序将尝试连接。"
     else
-        echo "验证程序已启动！请等待消息，如'start sync data from server'，表示成功运行。"
+        echo "验证程序已在 screen 会话 'cysic_verifier' 中启动！"
+        echo "您可以使用选项 2 查看 screen 日志，或运行 'screen -r cysic_verifier' 直接进入会话。"
         echo "重要：您的助记词文件已生成，位于 ~/.cysic/keys/ 文件夹。"
         echo "请妥善备份此文件夹中的文件，否则您将无法再次运行验证程序。"
     fi
 }
 
-# 函数：查看日志
+# 函数：查看 screen 日志
 view_logs() {
-    LOG_DIR=~/cysic-verifier/
-    if [ -d "$LOG_DIR" ]; then
-        echo "正在检查 ~/cysic-verifier/ 目录中的日志文件..."
-        # 递归查找 .log、.txt 文件或以 log 开头的文件
-        LOG_FILES=$(find "$LOG_DIR" -type f \( -name "*.log" -o -name "*.txt" -o -name "log*" \) 2>/dev/null)
-        if [ -n "$LOG_FILES" ]; then
-            echo "找到以下日志文件："
-            echo "$LOG_FILES"
-            echo "请输入要查看的日志文件路径（或按 Enter 跳过）："
-            read -r LOG_FILE
-            if [ -n "$LOG_FILE" ] && [ -f "$LOG_FILE" ]; then
-                echo "显示日志文件：$LOG_FILE"
-                cat "$LOG_FILE"
-            else
-                echo "未选择有效的日志文件或文件不存在。"
-            fi
+    # 检查 screen 会话是否存在
+    if screen -list | grep -q "cysic_verifier"; then
+        echo "找到 screen 会话 'cysic_verifier'。"
+        echo "您可以直接进入 screen 会话查看实时日志，命令为：screen -r cysic_verifier"
+        echo "按 Ctrl+A 然后按 D 退出 screen 会话而不终止程序。"
+        echo "是否要进入 screen 会话查看日志？（y/n）"
+        read -r enter_screen
+        if [ "$enter_screen" = "y" ] || [ "$enter_screen" = "Y" ]; then
+            screen -r cysic_verifier
         else
-            echo "未在 ~/cysic-verifier/ 目录及其子目录中找到日志文件。"
-            echo "正在列出 ~/cysic-verifier/ 目录中的所有文件以供调试："
-            ls -R "$LOG_DIR"
+            echo "您选择了不进入 screen 会话。可以通过 'screen -r cysic_verifier' 随时查看。"
         fi
     else
-        echo "错误：未找到 ~/cysic-verifier/ 目录。请确保已完成节点安装。"
+        echo "错误：未找到 screen 会话 'cysic_verifier'。"
+        echo "请确保已通过选项 1 启动验证程序，或检查 screen 会话是否已被终止。"
+        echo "您可以运行 'screen -list' 查看所有活动 screen 会话。"
     fi
 }
 
 # 函数：重新连接验证程序
 reconnect_verifier() {
     echo "正在尝试重新连接验证程序..."
+    # 检查是否已有 screen 会话
+    if screen -list | grep -q "cysic_verifier"; then
+        echo "已有运行中的 screen 会话 'cysic_verifier'。"
+        echo "是否要终止现有会话并重新启动？（y/n）"
+        read -r terminate
+        if [ "$terminate" = "y" ] || [ "$terminate" = "Y" ]; then
+            screen -S cysic_verifier -X quit
+            echo "已终止现有 screen 会话。"
+        else
+            echo "未终止现有会话。您可以通过 'screen -r cysic_verifier' 查看当前会话。"
+            return 0
+        fi
+    fi
+
     cd ~/cysic-verifier/ || { echo "错误：无法切换到~/cysic-verifier/目录。请确保已安装节点。"; return 1; }
-    bash start.sh &
+    screen -dmS cysic_verifier bash start.sh
     if [ $? -ne 0 ]; then
         echo "错误：启动验证程序失败。请检查start.sh脚本或等待几分钟后重试。"
         echo "如果看到'err: rpc error'，请等待几分钟，验证程序将尝试连接。"
     else
-        echo "验证程序已重新启动！请等待消息，如'start sync data from server'，表示成功运行。"
+        echo "验证程序已在新的 screen 会话 'cysic_verifier' 中重新启动！"
+        echo "您可以使用选项 2 查看 screen 日志，或运行 'screen -r cysic_verifier' 直接进入会话。"
     fi
 }
 
@@ -87,7 +98,7 @@ while true; do
     clear
     echo "=== Cysic 验证程序管理菜单 ==="
     echo "1. 安装并运行节点"
-    echo "2. 查看日志"
+    echo "2. 查看 screen 日志"
     echo "3. 重新连接验证程序"
     echo "4. 退出脚本"
     echo "请输入您的选择（1-4）："
