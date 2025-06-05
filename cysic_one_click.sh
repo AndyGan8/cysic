@@ -151,6 +151,7 @@ delete_session_and_node() {
 # 主菜单
 while true; do
     clear
+    echo "=== 脚本由Andy甘免费开源，推特@mingfei2022 ==="
     echo "=== Cysic 验证程序管理菜单 ==="
     echo "1. 安装并运行节点"
     echo "2. 查看 screen 日志"
