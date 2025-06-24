@@ -54,16 +54,37 @@ install_and_run_node() {
         fi
     fi
 
-    # 运行 Docker 容器
-    # 假设 start.sh 需要在容器内执行，并挂载 ~/.cysic/keys 和 ~/cysic-verifier 目录
+    # 默认镜像
+    DOCKER_IMAGE="whoami39/cysic-verifier:latest"
+    echo "默认使用镜像 $DOCKER_IMAGE"
+    echo "如果需要使用其他镜像，请输入自定义镜像名称（例如 myregistry.example.com/cysic/verifier:latest），或按 Enter 继续："
+    read -r custom_image
+    if [ -n "$custom_image" ]; then
+        DOCKER_IMAGE="$custom_image"
+    fi
+
+    # 尝试拉取镜像
+    echo "正在拉取 Docker 镜像 $DOCKER_IMAGE ..."
+    if ! docker pull "$DOCKER_IMAGE" 2>/dev/null; then
+        echo "错误：无法拉取镜像 $DOCKER_IMAGE。可能的原因："
+        echo "1. 镜像名称或仓库不正确。请确认正确的镜像名称和仓库。"
+        echo "2. 镜像在私有仓库中，需要登录。请运行 'docker login <registry-url>' 并提供凭证。"
+        echo "3. 网络连接问题。请检查网络或防火墙设置。"
+        echo "您可以尝试构建本地镜像。请在 ~/cysic-verifier 目录下创建 Dockerfile 并运行 'docker build -t cysic/verifier:latest .'"
+        return 1
+    fi
+
+    # 运行 Docker 容器，传递 EVM_ADDR 环境变量
     docker run -d --name cysic_verifier \
-        -v "$HOME/.cysic/keys:/root/.cysic/keys" \
-        -v "$HOME/cysic-verifier:/app" \
-        --workdir /app \
+        -e EVM_ADDR="$REWARD_ADDRESS" \
+        -v "$HOME/.cysic/keys:/root/.cysic" \
+        -v "$HOME/cysic-verifier/data:/app/data" \
+        -v "$HOME/cysic-verifier/scroll_prover:/root/.scroll_prover" \
+        --network host \
         --restart unless-stopped \
-        cysic/verifier:latest bash start.sh
+        "$DOCKER_IMAGE"
     if [ $? -ne 0 ]; then
-        echo "错误：启动 Docker 容器失败。请检查 Docker 环境或 start.sh 脚本。"
+        echo "错误：启动 Docker 容器失败。请检查 Docker 环境、镜像名称或 start.sh 脚本。"
         echo "如果看到'err: rpc error'，请等待几分钟，验证程序将尝试连接。"
     else
         echo "验证程序已在 Docker 容器 'cysic_verifier' 中启动！"
@@ -75,7 +96,6 @@ install_and_run_node() {
 
 # 函数：查看 Docker 容器日志
 view_logs() {
-    # 检查 Docker 容器是否存在
     if docker ps -a --filter "name=cysic_verifier" | grep -q "cysic_verifier"; then
         echo "找到 Docker 容器 'cysic_verifier'。"
         echo "您可以查看实时日志，命令为：docker logs -f cysic_verifier"
@@ -96,20 +116,31 @@ view_logs() {
 # 函数：重新连接验证程序（核心逻辑）
 reconnect_verifier_core() {
     cd ~/cysic-verifier/ || { echo "错误：无法切换到~/cysic-verifier/目录。请确保已安装节点。"; return 1; }
-    # 停止并删除现有容器
     if docker ps -a --filter "name=cysic_verifier" | grep -q "cysic_verifier"; then
         docker stop cysic_verifier &> /dev/null
         docker rm cysic_verifier &> /dev/null
     fi
-    # 重新运行容器
+    DOCKER_IMAGE="whoami39/cysic-verifier:latest"
+    echo "默认使用镜像 $DOCKER_IMAGE"
+    echo "如果需要使用其他镜像，请输入自定义镜像名称（例如 myregistry.example.com/cysic/verifier:latest），或按 Enter 继续："
+    read -r custom_image
+    if [ -n "$custom_image" ]; then
+        DOCKER_IMAGE="$custom_image"
+    fi
+    if ! docker pull "$DOCKER_IMAGE" 2>/dev/null; then
+        echo "错误：无法拉取镜像 $DOCKER_IMAGE。请检查镜像名称或网络连接。"
+        return 1
+    fi
     docker run -d --name cysic_verifier \
-        -v "$HOME/.cysic/keys:/root/.cysic/keys" \
-        -v "$HOME/cysic-verifier:/app" \
-        --workdir /app \
+        -e EVM_ADDR="$REWARD_ADDRESS" \
+        -v "$HOME/.cysic/keys:/root/.cysic" \
+        -v "$HOME/cysic-verifier/data:/app/data" \
+        -v "$HOME/cysic-verifier/scroll_prover:/root/.scroll_prover" \
+        --network host \
         --restart unless-stopped \
-        cysic/verifier:latest bash start.sh
+        "$DOCKER_IMAGE"
     if [ $? -ne 0 ]; then
-        echo "错误：启动 Docker 容器失败。请检查 Docker 环境或 start.sh 脚本。"
+        echo "错误：启动 Docker 容器失败。请检查 Docker 环境、镜像名称或 start.sh 脚本。"
         echo "如果看到'err: rpc error'，请等待几分钟，验证程序将尝试连接。"
         return 1
     else
@@ -118,7 +149,7 @@ reconnect_verifier_core() {
     fi
 }
 
-# 函数：手动或自动重新连接验证程序
+# 函数：重新连接验证程序
 reconnect_verifier() {
     echo "=== 重新连接验证程序子菜单 ==="
     echo "1. 手动重新连接验证程序"
@@ -137,7 +168,6 @@ reconnect_verifier() {
             ;;
         2)
             echo "启用每小时自动重新连接验证程序..."
-            # 检查是否已存在自动重新连接进程
             if [ -f /tmp/cysic_auto_reconnect.pid ]; then
                 pid=$(cat /tmp/cysic_auto_reconnect.pid)
                 if ps -p "$pid" > /dev/null; then
@@ -146,7 +176,6 @@ reconnect_verifier() {
                     rm /tmp/cysic_auto_reconnect.pid
                 fi
             fi
-            # 启动后台循环
             (
                 while true; do
                     if docker ps -a --filter "name=cysic_verifier" | grep -q "cysic_verifier"; then
@@ -155,7 +184,7 @@ reconnect_verifier() {
                         echo "[$(date)] 自动停止并删除现有 Docker 容器。" >> ~/cysic_auto_reconnect.log
                     fi
                     reconnect_verifier_core && echo "[$(date)] 自动重新连接成功。" >> ~/cysic_auto_reconnect.log || echo "[$(date)] 自动重新连接失败。" >> ~/cysic_auto_reconnect.log
-                    sleep 3600  # 每小时（3600秒）执行一次
+                    sleep 3600
                 done
             ) &
             pid=$!
@@ -201,7 +230,6 @@ delete_session_and_node() {
     echo "是否继续？（y/n）"
     read -r confirm
     if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then
-        # 禁用自动重新连接
         if [ -f /tmp/cysic_auto_reconnect.pid ]; then
             pid=$(cat /tmp/cysic_auto_reconnect.pid)
             if ps -p "$pid" > /dev/null; then
@@ -213,8 +241,6 @@ delete_session_and_node() {
                 echo "未找到运行中的自动重新连接进程，但已清理 PID 文件。"
             fi
         fi
-
-        # 检查并删除 Docker 容器
         if docker ps -a --filter "name=cysic_verifier" | grep -q "cysic_verifier"; then
             docker stop cysic_verifier &> /dev/null
             docker rm cysic_verifier &> /dev/null
@@ -222,8 +248,6 @@ delete_session_and_node() {
         else
             echo "未找到 'cysic_verifier' Docker 容器，跳过删除步骤。"
         fi
-
-        # 删除 ~/cysic-verifier/ 目录
         if [ -d ~/cysic-verifier/ ]; then
             rm -rf ~/cysic-verifier/
             if [ $? -eq 0 ]; then
@@ -235,8 +259,6 @@ delete_session_and_node() {
         else
             echo "未找到 ~/cysic-verifier/ 目录，跳过删除步骤。"
         fi
-
-        # 确认 ~/.cysic/keys/ 文件夹保留
         if [ -d ~/.cysic/keys/ ]; then
             echo "已保留 ~/.cysic/keys/ 文件夹，请确保已备份其中的助记词文件。"
         else
